@@ -3,7 +3,7 @@
 A simple offline-capable webapp (PWA) to quickly log wildlife sightings on **Barro Colorado Island (BCI), Panama** and export them as CSV.
 
 ## Taxa
-Bats, Birds, Mammals and Insects. Species lists come from the BCI checklists (CSV files in this repo) and use scientific names for now (prototype). Mammal subspecies are excluded.
+Bats, Birds, Mammals and Insects. Species lists come from the BCI checklists (CSV files in this repo) and can be shown by **common name or Latin name** (chosen at session start; species without a common name show the Latin name). The recorded species is always the Latin name. Extra common names are in `common_names_extra.csv`. Mammal subspecies are excluded.
 
 - **Insects:** the Quick list has only 50 species as a test; the full checklist (~1,940 species) is selectable as "Full checklist" at session start.
 - Species not in a list can be added in the app.

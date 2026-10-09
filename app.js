@@ -59,17 +59,18 @@ function fmtDur(ms) {
 }
 const activeSession = () => db.sessions.find(s => s.id === db.active) || null;
 const allSpots = () => [...new Set([...(cfg.spots || []), ...db.spots])];
+const labelOf = (it, mode) => (mode === 'common' && it.c) ? it.c : it.n;
 const norm = x => (typeof x === 'string' ? { n: x } : x);
 
 function baseListFor(tx, listType) {
   const full = cfg.taxaFull && cfg.taxaFull[tx];
   return (listType === 'full' && full) ? full : ((cfg.taxa || {})[tx] || []);
 }
-function speciesByTaxon(listType) {
+function speciesByTaxon(listType, mode) {
   const out = {};
   const taxa = new Set([...Object.keys(cfg.taxa || {}), ...Object.keys(cfg.taxaFull || {})]);
   for (const tx of taxa) {
-    out[tx] = baseListFor(tx, listType).map(norm).sort((a, b) => a.n.localeCompare(b.n));
+    out[tx] = baseListFor(tx, listType).map(norm).sort((a, b) => labelOf(a, mode).localeCompare(labelOf(b, mode)));
   }
   for (const [tx, list] of Object.entries(db.custom)) {
     out[tx] = out[tx] || [];
@@ -104,12 +105,12 @@ function speciesSource(tx, name, listType) {
 }
 function buildCsv(sessions) {
   const head = ['session_id', 'observer', 'spot', 'list_type', 'lat', 'lng', 'session_start', 'session_end',
-    'taxon', 'species', 'count', 'species_source', 'timestamp_utc', 'timestamp_local'];
+    'taxon', 'species', 'common_name', 'name_mode', 'count', 'species_source', 'timestamp_utc', 'timestamp_local'];
   const rows = [head];
   for (const s of sessions) {
     const listType = s.listType || 'quick';
     for (const e of s.events) {
-      rows.push([s.id, s.observer, s.spot, listType, s.lat ?? '', s.lng ?? '', s.start, s.end || '', e.tx, e.sp, 1,
+      rows.push([s.id, s.observer, s.spot, listType, s.lat ?? '', s.lng ?? '', s.start, s.end || '', e.tx, e.sp, (knownSpecies(e.tx, e.sp) || {}).c || '', s.nameMode || 'latin', 1,
         speciesSource(e.tx, e.sp, listType), e.t, localStamp(e.t)]);
     }
   }
@@ -161,6 +162,13 @@ function renderHome() {
     allSpots().map(sp => h('option', { value: sp }, sp)));
   spotSel.value = allSpots().includes(db.lastSpot) ? db.lastSpot : '';
 
+  const nameMode = db.lastNameMode === 'common' ? 'common' : 'latin';
+  const nameRadioCommon = h('input', { type: 'radio', name: 'namemode', value: 'common', checked: nameMode === 'common' });
+  const nameRadioLatin = h('input', { type: 'radio', name: 'namemode', value: 'latin', checked: nameMode === 'latin' });
+  const namePicker = h('div', { class: 'tools' },
+    h('label', { class: 'chk' }, nameRadioCommon, 'Common names'),
+    h('label', { class: 'chk' }, nameRadioLatin, 'Latin names'));
+
   const listType = db.lastListType === 'full' ? 'full' : 'quick';
   const listRadioQuick = h('input', { type: 'radio', name: 'listtype', value: 'quick', checked: listType === 'quick' });
   const listRadioFull = h('input', { type: 'radio', name: 'listtype', value: 'full', checked: listType === 'full' });
@@ -181,11 +189,12 @@ function renderHome() {
     if (!observer) { obs.focus(); return alert('Enter your name.'); }
     if (!spotSel.value) return alert('Select a spot.');
     const chosenListType = listRadioFull.checked ? 'full' : 'quick';
+    const chosenNameMode = nameRadioCommon.checked ? 'common' : 'latin';
     const existingIds = new Set(db.sessions.map(x => x.id));
-    const s = { id: sessionId(observer, existingIds), observer, spot: spotSel.value, listType: chosenListType,
+    const s = { id: sessionId(observer, existingIds), observer, spot: spotSel.value, listType: chosenListType, nameMode: chosenNameMode,
       lat: null, lng: null, start: new Date().toISOString(), end: null, events: [] };
     db.sessions.push(s);
-    db.active = s.id; db.observer = observer; db.lastSpot = spotSel.value; db.lastListType = chosenListType;
+    db.active = s.id; db.observer = observer; db.lastSpot = spotSel.value; db.lastListType = chosenListType; db.lastNameMode = chosenNameMode;
     save();
     try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
     try {
@@ -230,6 +239,7 @@ function renderHome() {
       h('label', {}, 'Spot', spotSel),
       h('p', {}, h('button', { class: 'link', onclick: addSpot }, '+ Add spot')),
       h('div', { class: 'field' }, h('span', { class: 'fieldlabel' }, 'Species list'), listPicker),
+      h('div', { class: 'field' }, h('span', { class: 'fieldlabel' }, 'Species names'), namePicker),
       h('button', { class: 'primary', onclick: start }, 'Start session'),
       h('h2', {}, 'Finished sessions'),
       history,
@@ -240,7 +250,8 @@ function renderHome() {
 
 function renderSession(s) {
   lockScreen();
-  const data = speciesByTaxon(s.listType);
+  const data = speciesByTaxon(s.listType, s.nameMode);
+  const mode = s.nameMode || 'latin';
   const taxa = Object.keys(data);
   if (!view.taxon || !taxa.includes(view.taxon)) view.taxon = taxa[0];
 
@@ -278,13 +289,13 @@ function renderSession(s) {
     for (const k of Object.keys(cards)) delete cards[k];
     const q = view.q.trim().toLowerCase();
     const items = (data[view.taxon] || []).filter(it =>
-      (!q || it.n.toLowerCase().includes(q) || (it.s || '').toLowerCase().includes(q)) &&
+      (!q || it.n.toLowerCase().includes(q) || (it.c || '').toLowerCase().includes(q)) &&
       (!view.seenOnly || countOf(it.n) > 0));
     const nodes = items.map(it => {
       const count = h('b', {});
-      const minus = h('button', { class: 'minus', 'aria-label': 'Undo one ' + it.n, onclick: () => record(it.n, view.taxon, -1) }, '−');
+      const minus = h('button', { class: 'minus', 'aria-label': 'Undo one ' + labelOf(it, mode), onclick: () => record(it.n, view.taxon, -1) }, '−');
       const card = h('div', { class: 'sp' },
-        h('button', { class: 'tap', onclick: () => record(it.n, view.taxon, +1) }, h('span', {}, it.n), count),
+        h('button', { class: 'tap', onclick: () => record(it.n, view.taxon, +1) }, h('span', {}, labelOf(it, mode)), count),
         minus);
       cards[it.n] = { card, count, minus };
       return card;
