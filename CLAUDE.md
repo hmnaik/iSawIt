@@ -4,3 +4,13 @@ Static PWA (index.html, app.js, sw.js, manifest.json) for logging BCI (Panama) s
 - Insects Quick list = 50 species (test); all ~1,940 are in `taxaFull`.
 - Entries are `{n: latin, c: common?}`. Session `nameMode` (common/latin) only affects display; `e.sp` records the Latin name. Extra common names: `common_names_extra.csv`.
 - Bump `CACHE` in sw.js when data/code changes.
+
+## Status (2026-10-09)
+Prototype done: BCI data, Common/Latin name option, Insects Quick = 50 test. NOT yet browser-tested (no node here to syntax-check app.js).
+Next iteration (later), open items:
+- Browser-test start screen, name modes and CSV export (new cols `common_name`, `name_mode`).
+- Real insect Quick list (currently first 50 = all Achilidae).
+- Mammals CSV contains bats (duplicates Bats tab) -> consider filtering.
+- Birds CSV has a beetle (*Ceraspis squamulifera*) and Nasua nasua (BCI has N. narica) -> check source.
+- Replace placeholder spots (Lab Clearing, Trail, Canopy Tower, Dock) with real BCI sites.
+- If changes aren't visible: service worker cache; bump CACHE in sw.js, hard refresh / unregister SW.
